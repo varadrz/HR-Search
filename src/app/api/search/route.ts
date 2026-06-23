@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     // 1. Programmatic X-Ray Logic Injection targeting professional profiles
     const targetQuery = `site:linkedin.com/in/ AND ${query} AND (HR OR Recruiter OR "Talent Acquisition" OR "Hiring Manager") -inurl:dir/ -inurl:jobs/ -inurl:posts/`;
 
-    const serperResponse = await fetch('https://google.serper.dev/search', {
+    let serperResponse = await fetch('https://google.serper.dev/search', {
       method: 'POST',
       headers: {
         'X-API-KEY': apiKey,
@@ -41,6 +41,33 @@ export async function POST(request: NextRequest) {
       })
     });
 
+    let data = null;
+
+    if (!serperResponse.ok) {
+      let errMsg = "";
+      try {
+        const errorData = await serperResponse.clone().json();
+        errMsg = errorData.message || "";
+      } catch (e) {}
+
+      // If Serper blocks the dork query pattern on a free account, fall back to a simpler pattern
+      if (serperResponse.status === 400 && (errMsg.toLowerCase().includes('free account') || errMsg.toLowerCase().includes('pattern'))) {
+        console.log("Detected Serper free account restriction. Retrying with fallback query pattern...");
+        const fallbackQuery = `linkedin.com/in/ "${query}" (HR OR Recruiter OR "Talent Acquisition" OR "Hiring Manager")`;
+        serperResponse = await fetch('https://google.serper.dev/search', {
+          method: 'POST',
+          headers: {
+            'X-API-KEY': apiKey,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            q: fallbackQuery,
+            num: 20
+          })
+        });
+      }
+    }
+
     if (!serperResponse.ok) {
       let errMsg = `Serper HTTP error ${serperResponse.status}`;
       try {
@@ -50,7 +77,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: errMsg }, { status: serperResponse.status });
     }
 
-    const data = await serperResponse.json();
+    data = await serperResponse.json();
     const organicResults = data.organic || [];
     const cleanContacts: ParsedContact[] = [];
 
