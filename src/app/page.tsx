@@ -570,8 +570,10 @@ Best regards,
             </div>
           </div>
           <div className="footer-bottom">
-            <span>&copy; 2026 Varad D. Open source release.</span>
+            <span>&copy; 2026 <a href="https://varadpatil.in/" target="_blank" rel="noreferrer" className="footer-author-link">Varad Patil</a>. Open source release.</span>
             <div className="footer-links">
+              <a href="https://github.com/varadrz" target="_blank" rel="noreferrer" title="GitHub"><i className="ti ti-brand-github"></i> GitHub</a>
+              <a href="https://www.linkedin.com/in/varadpatil665/" target="_blank" rel="noreferrer" title="LinkedIn"><i className="ti ti-brand-linkedin"></i> LinkedIn</a>
               <a href="https://github.com/varadrz/HR-Search" target="_blank" rel="noreferrer">Repository</a>
               <a href="https://serper.dev" target="_blank" rel="noreferrer">Serper.dev</a>
             </div>
