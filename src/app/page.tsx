@@ -118,6 +118,7 @@ export default function Home() {
       await sleep(400);
 
       const data = await res.json();
+      const contactsArray = Array.isArray(data) ? data : (data.contacts || []);
 
       setActiveStepIndex(3);
       addLog('Drafting email format predictions & structuring analytics...');
@@ -127,15 +128,15 @@ export default function Home() {
       setActiveStepIndex(4);
       setCurrentResults(prev => {
         const seen = new Set(prev.map(c => c.profileUrl));
-        const newUnique = data.filter((c: Contact) => !seen.has(c.profileUrl));
+        const newUnique = contactsArray.filter((c: Contact) => !seen.has(c.profileUrl));
         return [...prev, ...newUnique];
       });
       setIsSearching(false);
 
-      if (data.length === 0) {
+      if (contactsArray.length === 0) {
         addLog('No contacts found matching the search criteria.');
       } else {
-        addLog(`Successfully parsed ${data.length} recruiter records.`);
+        addLog(`Successfully parsed ${contactsArray.length} recruiter records.`);
       }
 
     } catch (err: any) {

@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
 interface ParsedContact {
   name: string;
@@ -7,77 +7,18 @@ interface ParsedContact {
   snippet: string;
   email: string | null;
   profileUrl: string;
-  confidence: 'High' | 'Likely' | 'Predicted';
+  confidence: string;
 }
 
-function cleanCompanyName(company: string) {
-  if (!company) return '';
-  return company
-    .replace(/\b(ltd|limited|inc|incorporated|co|gmbh|solutions|corp|corporation|llc|plc|group|india|pvt|private)\b/gi, '')
-    .replace(/[,.-]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function predictEmail(name: string, company: string) {
-  if (!name || !company) return { email: null, pattern: 'unknown' };
-  const cleanName = name.toLowerCase().replace(/[^a-z\s.-]/g, '').trim();
-  const parts = cleanName.split(/[\s.-]+/);
-  if (parts.length === 0) return { email: null, pattern: 'unknown' };
-
-  const first = parts[0];
-  const last = parts[parts.length - 1] || '';
-  
-  let domain = cleanCompanyName(company)
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, '')
-    .trim();
-  
-  if (!domain) domain = 'company';
-  const domainUrl = `${domain}.com`;
-
-  if (last) {
-    return {
-      email: `${first}.${last}@${domainUrl}`,
-      pattern: `first.last@${domainUrl}`
-    };
-  } else {
-    return {
-      email: `${first}@${domainUrl}`,
-      pattern: `first@${domainUrl}`
-    };
-  }
-}
-
-function isValidPersonName(name: string) {
-  if (!name) return false;
-  const lower = name.toLowerCase();
-  const blacklist = [
-    'profile', 'linkedin', 'directory', 'jobs', 'recruitment', 
-    'careers', 'hiring', 'log in', 'sign up', 'search', 
-    'results', 'members', 'people', 'find', 'connections'
-  ];
-  if (blacklist.some(keyword => lower.includes(keyword))) return false;
-  if (name.length < 3 || name.split(/\s+/).length > 4) return false;
-  return true;
-}
-
-function isValidEmail(email: string | null): boolean {
-  if (!email) return false;
-  // Format check
-  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-  if (!emailRegex.test(email)) return false;
-  // Ignore obviously broken placeholders or generic fallbacks
-  if (email.includes('company.com') || email.includes('..') || email.includes('@company') || email.includes('undefined')) return false;
-  return true;
-}
-
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const { query, role, gl, num } = await request.json();
-    
+    const { query } = await request.json();
+    if (!query) {
+      return NextResponse.json({ error: 'Search query is required' }, { status: 400 });
+    }
+
     // Support Serper Key from backend env variables or client header
-    const apiKey = process.env.SERPER_API_KEY || request.headers.get('x-api-key');
+    const apiKey = process.env.SERPER_API_KEY || request.headers.get('x-api-key') || '';
 
     if (!apiKey) {
       return NextResponse.json({ 
@@ -85,175 +26,166 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
-    if (!query) {
-      return NextResponse.json({ message: 'Search query is required' }, { status: 400 });
-    }
+    // 1. Programmatic X-Ray Logic Injection targeting professional profiles
+    const targetQuery = `site:linkedin.com/in/ AND ${query} AND (HR OR Recruiter OR "Talent Acquisition" OR "Hiring Manager") -inurl:dir/ -inurl:jobs/ -inurl:posts/`;
 
-    // Parallel calls helper
-    const searchSerper = async (q: string, depth: number | null) => {
-      const url = "https://google.serper.dev/search";
-      const payload: any = { q, gl: gl || 'in' };
-      if (depth && depth !== 10) {
-        payload.num = depth;
-      }
-
-      let response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "X-API-KEY": apiKey,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) {
-        let errMsg = `Serper HTTP error ${response.status}`;
-        try {
-          const errorData = await response.json();
-          errMsg = errorData.message || errMsg;
-        } catch (e) {}
-
-        // Retry without num parameter if the request fails due to tier restrictions
-        if (payload.num && (response.status === 400 || errMsg.toLowerCase().includes('free') || errMsg.toLowerCase().includes('pattern'))) {
-          console.warn("Retrying query without 'num' parameter due to account tier constraints...");
-          delete payload.num;
-          response = await fetch(url, {
-            method: "POST",
-            headers: {
-              "X-API-KEY": apiKey,
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify(payload)
-          });
-
-          if (!response.ok) {
-            let retryErrMsg = `Serper HTTP error ${response.status}`;
-            try {
-              const errorData = await response.json();
-              retryErrMsg = errorData.message || retryErrMsg;
-            } catch (e) {}
-            throw new Error(retryErrMsg);
-          }
-        } else {
-          throw new Error(errMsg);
-        }
-      }
-      return await response.json();
-    };
-
-    // Construct the search query
-    // Support arbitrary searches cleanly
-    let linkedinQuery = `site:linkedin.com/in/ ${query}`;
-    let webQuery = `${query} contact email`;
-
-    if (role && role !== 'None') {
-      linkedinQuery = `site:linkedin.com/in/ "${query}" "${role}"`;
-      webQuery = `"${query}" "${role}" contact email`;
-    }
-
-    let linkedinData: any = { organic: [] };
-    let webData: any = { organic: [] };
-
-    // Execute LinkedIn search with fallback
-    try {
-      linkedinData = await searchSerper(linkedinQuery, num);
-    } catch (err: any) {
-      try {
-        const fallbackQuery = role && role !== 'None' ? `"${query}" "${role}" profile` : `"${query}" profile`;
-        linkedinData = await searchSerper(fallbackQuery, num);
-      } catch (fallbackErr) {
-        console.error("Fallback query failed:", fallbackErr);
-      }
-    }
-
-    // Execute Web search
-    try {
-      webData = await searchSerper(webQuery, num);
-    } catch (err) {
-      console.error("Web search failed:", err);
-    }
-
-    const cleanContacts: ParsedContact[] = [];
-    const seenLinks = new Set<string>();
-
-    const allItems = [
-      ...(linkedinData.organic || []),
-      ...(webData.organic || [])
-    ];
-
-    allItems.forEach((item: any) => {
-      const link = item.link || '';
-      if (!link || seenLinks.has(link)) return;
-      seenLinks.add(link);
-
-      const title = item.title || '';
-      const snippet = item.snippet || '';
-
-      // Skip junk
-      const junkPatterns = /pdf|job|post|vacancy|salary|opening|career|instagram|facebook/i;
-      if (junkPatterns.test(title) || junkPatterns.test(link)) {
-        return;
-      }
-
-      // Extract Name
-      let fullName = title.split(/[|\-·]/)[0].trim();
-      fullName = fullName.replace(/,.*$/, '').replace(/\(.*\)/, '').trim();
-
-      if (!isValidPersonName(fullName)) {
-        return;
-      }
-
-      // Headline
-      const headline = title.split(/[|\-·]/)[1]?.trim() || 'HR Professional';
-
-      // Company
-      let companyName = title.split(/[|\-·]/)[2]?.trim() || '';
-      if (!companyName) {
-        const atMatch = title.match(/(?:at|@)\s+([^,|:-]+)/i);
-        if (atMatch) {
-          companyName = atMatch[1].trim();
-        }
-      }
-      if (!companyName) {
-        // Infer from query if not found
-        companyName = query;
-      }
-      companyName = cleanCompanyName(companyName);
-
-      // Email Extraction
-      const emailRegex = /([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+)/gi;
-      const foundEmails = snippet.match(emailRegex) || title.match(emailRegex);
-      const discoveredEmail = foundEmails ? foundEmails[0] : null;
-
-      let email = discoveredEmail;
-      let confidence: 'High' | 'Likely' | 'Predicted' = 'High';
-
-      if (!email) {
-        const prediction = predictEmail(fullName, companyName);
-        email = prediction.email;
-        confidence = 'Predicted';
-      } else {
-        confidence = 'High';
-      }
-
-      // Verify email validity using the new verification framework
-      if (!isValidEmail(email)) {
-        email = null;
-      }
-
-      cleanContacts.push({
-        name: fullName,
-        company: companyName ? companyName.toUpperCase() : 'COMPANY',
-        headline: headline,
-        snippet: snippet,
-        email: email,
-        profileUrl: link,
-        confidence: confidence
-      });
+    const serperResponse = await fetch('https://google.serper.dev/search', {
+      method: 'POST',
+      headers: {
+        'X-API-KEY': apiKey,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        q: targetQuery,
+        num: 20
+      })
     });
 
-    return NextResponse.json(cleanContacts);
+    if (!serperResponse.ok) {
+      let errMsg = `Serper HTTP error ${serperResponse.status}`;
+      try {
+        const errorData = await serperResponse.json();
+        errMsg = errorData.message || errMsg;
+      } catch (e) {}
+      return NextResponse.json({ message: errMsg }, { status: serperResponse.status });
+    }
+
+    const data = await serperResponse.json();
+    const organicResults = data.organic || [];
+    const cleanContacts: ParsedContact[] = [];
+
+    // Blacklist filter patterns to instantly drop generic directories, maps, or junk results
+    const junkPatterns = /pdf|job|post|vacancy|salary|opening|career|instagram|facebook|trends|contact\.us|campus/i;
+
+    for (const item of organicResults) {
+      const title = item.title || '';
+      const snippet = item.snippet || '';
+      const link = item.link || '';
+
+      if (junkPatterns.test(title) || junkPatterns.test(link)) continue;
+
+      // Profile Name Splitting & Extraction Logic
+      let computedName = title.split(/[|\-·–]/)[0].trim();
+      computedName = computedName.replace(/\(.*?\)/g, '').trim(); // Strip bracket metadata e.g. (He/Him)
+
+      // Skip anomalies (e.g. "Contact Us", "Hyderabad Campus", or weird title aggregations)
+      if (
+        computedName.split(' ').length > 3 || 
+        computedName.split(' ').length < 2 || 
+        /recruiter|hr|talent|manager|campus|contact|india|microsoft/i.test(computedName)
+      ) {
+        continue; 
+      }
+
+      // 2. ISOLATE CURRENT EXPERIENCE: Clean historical career info to prevent false matches
+      let textToScan = `${title} ${snippet}`.toLowerCase();
+      const pastExperiencePatterns = /(?:ex[图形\-\s]|former|previously\s+at|alumni\s+of)\s*[a-z0-9\s]+/gi;
+      textToScan = textToScan.replace(pastExperiencePatterns, '');
+
+      // Identify active, current employer anchor sequences
+      const currentIndicators = /(?:at|@|recruiter\s*·|talent\s*·|leader\s*·|head\s+of\s+hr\s+at)\s*([a-z0-9\s.&]+)/i;
+      const match = textToScan.match(currentIndicators);
+      
+      let companyName = '';
+      let domainSlug = 'company.com';
+
+      if (match && match[1]) {
+        companyName = match[1].split(/[,\-·|]/)[0].trim();
+        
+        // Anti-Hallucination Guard: Remove common geographic words, platforms, and garbage metadata string loops
+        companyName = companyName.replace(/hyderabad|bengaluru|mumbai|pune|india|remote|usa|global|london|tech|linkedin|hr\s+at|campus|development|unitedhealth/i, '').trim();
+        
+        // Clean out trailing connective conjunctions (like "amp", "and")
+        companyName = companyName.replace(/\b(and|amp|or)\b.*/i, '').trim();
+
+        const cleanSlug = companyName.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (cleanSlug && cleanSlug.length > 2) {
+          domainSlug = `${cleanSlug}.com`;
+        }
+      }
+
+      // Fallback fallback: Parse query context to guess domain if the snippet context is heavily garbled
+      if (domainSlug === 'company.com') {
+        const queryTokens = query.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/);
+        // Look for common corporate terms passed inside your search bar query
+        const knownTarget = queryTokens.find(t => !['hr', 'recruiter', 'talent', 'acquisition', 'manager', 'hyderabad', 'pune', 'bengaluru', 'india'].includes(t));
+        if (knownTarget) {
+          companyName = knownTarget;
+          domainSlug = `${knownTarget}.com`;
+        }
+      }
+
+      let verifiedEmail = null;
+      let confidenceLevel = 'Predicted';
+
+      // 3. ENRICHMENT LAYER: Hit Apollo's data pipeline with the direct profile link
+      if (process.env.APOLLO_API_KEY && link.includes('linkedin.com/in/')) {
+        try {
+          const apolloRes = await fetch('https://api.apollo.io/v1/people/match', {
+            method: 'POST',
+            headers: {
+              'Cache-Control': 'no-cache',
+              'Content-Type': 'application/json',
+              'Api-Key': process.env.APOLLO_API_KEY
+            },
+            body: JSON.stringify({ 
+              linkedin_url: link,
+              reveal_personal_emails: false 
+            })
+          });
+
+          if (apolloRes.ok) {
+            const apolloData = await apolloRes.json();
+            if (apolloData.person && apolloData.person.email) {
+              verifiedEmail = apolloData.person.email;
+              confidenceLevel = 'Verified Database Record';
+              
+              if (apolloData.person.organization?.name) {
+                companyName = apolloData.person.organization.name;
+              }
+            }
+          }
+        } catch (enrichError) {
+          console.error('Apollo enrichment skipped for current card:', enrichError);
+        }
+      }
+
+      // 4. ALGORITHMIC FALLBACK: Run structural first.last mapping if database query missed
+      if (!verifiedEmail) {
+        const nameTokens = computedName.toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/).filter(Boolean);
+        if (nameTokens.length >= 2) {
+          verifiedEmail = `${nameTokens[0].trim()}.${nameTokens[nameTokens.length - 1].trim()}@${domainSlug}`;
+        } else if (nameTokens.length === 1) {
+          verifiedEmail = `${nameTokens[0].trim()}@${domainSlug}`;
+        }
+      }
+
+      // Only push structured human profile entities down to the dashboard array stream
+      if (
+        domainSlug !== 'company.com' && 
+        verifiedEmail && 
+        !verifiedEmail.includes('linkedin.com') && 
+        !verifiedEmail.includes('hratmicrosoft') &&
+        !verifiedEmail.includes('hyderabad') &&
+        !verifiedEmail.includes('india') &&
+        !verifiedEmail.includes('unitedhealth')
+      ) {
+        cleanContacts.push({
+          name: computedName,
+          company: companyName.toUpperCase() || 'TARGET CORP',
+          headline: title.split(/[|\-·–]/)[1]?.trim() || 'Talent Acquisition Professional',
+          snippet: snippet,
+          email: verifiedEmail,
+          profileUrl: link,
+          confidence: confidenceLevel
+        });
+      }
+    }
+
+    return NextResponse.json({ contacts: cleanContacts });
+
   } catch (error: any) {
-    return NextResponse.json({ message: error.message || 'Internal Server Error' }, { status: 500 });
+    console.error('Search API Error:', error);
+    return NextResponse.json({ message: error.message || 'Search Pipeline Interrupted' }, { status: 500 });
   }
 }
