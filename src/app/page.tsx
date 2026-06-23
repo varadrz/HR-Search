@@ -252,9 +252,7 @@ Best regards,
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
       <header>
         <a href="#" className="brand-logo">
-          <div className="brand-logo-icon">
-            <i className="ti ti-radar"></i>
-          </div>
+          <img src="/logo.png" alt="HR Finder Logo" className="brand-logo-img" />
           <div className="brand-logo-text">
             <h1>HR Finder</h1>
           </div>
@@ -415,7 +413,7 @@ Best regards,
                   <div className="placeholder-radar-circle1"></div>
                   <div className="placeholder-radar-circle2"></div>
                   <div className="placeholder-radar-glass">
-                    <i className="ti ti-search"></i>
+                    <img src="/logo.png" alt="HR Finder Logo" className="placeholder-logo-img" />
                   </div>
                 </div>
                 <h3>No Scan Conducted</h3>
@@ -561,9 +559,7 @@ Best regards,
           <div className="footer-columns">
             <div className="footer-branding">
               <a href="#" className="brand-logo" style={{ marginBottom: '12px' }}>
-                <div className="brand-logo-icon" style={{ width: '28px', height: '28px', fontSize: '15px' }}>
-                  <i className="ti ti-radar"></i>
-                </div>
+                <img src="/logo.png" alt="HR Finder Logo" className="brand-logo-img-small" />
                 <h1 style={{ fontSize: '16px' }}>HR Finder</h1>
               </a>
               <p>An enterprise-grade client-side lead capture tool mapping recruiter directories using direct API lookups.</p>

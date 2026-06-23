@@ -1,8 +1,10 @@
 # HR Finder / Recruiter & Talent Scout Radar 📡
 
+[![Live Demo](https://img.shields.io/badge/Live-Demo-00C853?style=for-the-badge&logo=vercel&logoColor=white)](https://hr-search.vercel.app/)
+
 A modern, serverless web application built with **Next.js 14 (App Router)** designed to perform targeted OSINT-focused lookups for talent acquisition teams, hiring managers, and HR personnel. It automates lead generation by querying search indexes securely, predicting corporate email addresses, and drafting hyper-targeted outreach emails on the fly.
 
-![HR Finder Interface](https://github.com/varadrz/HR-Search/raw/main/public/preview.png) *(Note: Add preview image here)*
+![HR Finder Architecture Flow](./public/hr_finder_architecture_flow.png)
 
 ---
 
