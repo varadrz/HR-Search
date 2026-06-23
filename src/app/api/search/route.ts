@@ -50,10 +50,11 @@ export async function POST(request: NextRequest) {
         errMsg = errorData.message || "";
       } catch (e) {}
 
-      // If Serper blocks the dork query pattern on a free account, fall back to a simpler pattern
+      // If Serper blocks the dork query pattern on a free account, fall back to a simpler pattern without quotes or dorking operators
       if (serperResponse.status === 400 && (errMsg.toLowerCase().includes('free account') || errMsg.toLowerCase().includes('pattern'))) {
-        console.log("Detected Serper free account restriction. Retrying with fallback query pattern...");
-        const fallbackQuery = `linkedin.com/in/ "${query}" (HR OR Recruiter OR "Talent Acquisition" OR "Hiring Manager")`;
+        console.log("Detected Serper free account restriction. Retrying with unquoted fallback query pattern...");
+        const cleanQuery = query.replace(/"/g, '');
+        const fallbackQuery = `linkedin.com/in/ ${cleanQuery} HR Recruiter Talent Acquisition Hiring Manager`;
         serperResponse = await fetch('https://google.serper.dev/search', {
           method: 'POST',
           headers: {
@@ -89,6 +90,7 @@ export async function POST(request: NextRequest) {
       const snippet = item.snippet || '';
       const link = item.link || '';
 
+      if (!link.includes('linkedin.com/in/')) continue;
       if (junkPatterns.test(title) || junkPatterns.test(link)) continue;
 
       // Profile Name Splitting & Extraction Logic
