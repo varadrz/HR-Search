@@ -112,7 +112,7 @@ export async function POST(request: NextRequest) {
       textToScan = textToScan.replace(pastExperiencePatterns, '');
 
       // Identify active, current employer anchor sequences
-      const currentIndicators = /(?:at|@|recruiter\s*·|talent\s*·|leader\s*·|head\s+of\s+hr\s+at)\s*([a-z0-9\s.&]+)/i;
+      const currentIndicators = /(?:\bat\b|@|recruiter\s*·|talent\s*·|leader\s*·|head\s+of\s+hr\s+\bat\b)\s*([a-z0-9\s.&]+)/i;
       const match = textToScan.match(currentIndicators);
       
       let companyName = '';
